@@ -1,21 +1,25 @@
-# check model inference
+# ref: https://github.com/Joshmantova/Eagle-Vision/
+
 import json
 from io import BytesIO
+from PIL import Image
 import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
-from PIL import Image
 
-# Commented out IPython magic to ensure Python compatibility.
-# # ref: https://github.com/Joshmantova/Eagle-Vision/
-# 
+import requests
 
 
+def download_files_drive(url, filename):
+  response = requests.get(url)
 
-def load_model(path: str = 'efficientnet_v2.h5'):
+  with open(filename, 'wb') as f:
+    f.write(response.content)
+
+def load_model(path: str = "efficientnet_v2.h5"):
     """Retrieves the trained model and maps it to the CPU by default,
     can also specify GPU here."""
     model = tf.keras.models.load_model(
@@ -42,8 +46,7 @@ def load_index_to_label_dict(
 
 
 def load_files_from_s3(
-        keys: list,
-        bucket_name: str = 'bird-classification-bucket'
+        keys: list
         ) -> list:
     """Retrieves files from S3 bucket"""
     s3_files = []
@@ -98,11 +101,23 @@ def predict(
 
 
 if __name__ == '__main__':
+    # download the model and json files
+    model_url = 'https://drive.google.com/u/0/uc?id=1Btmu1wXPx8mWs6hv-Lzsl8vKmUAssd3i&export=download'
+    all_image_files_json_url = "https://drive.google.com/u/0/uc?id=12UJKS_xY__DjALciOJOI-8rHYnzUcaxK&export=download"
+    index_to_class_label_json_url = "https://drive.google.com/u/0/uc?id=19K3dsPrAdKeB-dFm7FAfn7RykbRU6JBs&export=download"
+    sample_image_link = "https://drive.google.com/u/0/uc?id=1_G9zeu3iZDwwUxlCJ_JDZeVbJL19MSRB&export=download"
+    download_files_drive(model_url, "efficientnet_v2.h5")
+    download_files_drive(all_image_files_json_url, "all_image_files.json")
+    download_files_drive(index_to_class_label_json_url, "index_to_class_label.json")
+    download_files_drive(sample_image_link, "sample_image.JPG")
+
+    
     model = load_model()
     index_to_class_label_dict = load_index_to_label_dict()
     all_image_files = load_s3_file_structure()
     types_of_elephants = sorted(list(all_image_files['test'].keys()))
     types_of_elephants = [bird.title() for bird in types_of_elephants]
+    root = "/content/drive/MyDrive/Elephants/elephant_images/"
 
     st.title('Welcome To Project Elephant Vision!')
     instructions = """
@@ -116,7 +131,7 @@ if __name__ == '__main__':
 
     file = st.file_uploader('Upload An Image')
     dtype_file_structure_mapping = {
-        'All Images': 'consolidated',
+        # 'All Images': 'consolidated',
         'Images Used To Train The Model': 'train',
         # 'Images Used To Tune The Model': 'valid',
         'Images The Model Has Never Seen': 'test'
@@ -125,45 +140,47 @@ if __name__ == '__main__':
 
     if file:  # if user uploaded file
         img = Image.open(file)
-        top_prediction = predict(img, index_to_class_label_dict, model, k=5)
+        prediction = predict(img, index_to_class_label_dict, model, k=5)
         # available_images = all_image_files.get(
-        #     'train').get(top_prediction.upper())
+        #     'train').get(prediction.upper())
         # examples_of_species = np.random.choice(available_images, size=3)
         # files_to_get_from_s3 = []
 
         # for im_name in examples_of_species:
-        #     path = os.path.join('train', top_prediction.upper(), im_name)
+        #     path = os.path.join('train', prediction.upper(), im_name)
         #     files_to_get_from_s3.append(path)
         # images_from_s3 = load_files_from_s3(keys=files_to_get_from_s3)
 
-    # else:
-    #     dataset_type = st.sidebar.selectbox(
-    #         "Data Portion Type", data_split_names)
-    #     image_files_subset = dtype_file_structure_mapping[dataset_type]
+    else:
+        dataset_type = st.sidebar.selectbox(
+            "Data Portion Type", data_split_names)
+        image_files_subset = dtype_file_structure_mapping[dataset_type]
 
-    #     selected_species = st.sidebar.selectbox("Elephant Type", types_of_elephants)
-    #     available_images = load_list_of_images_available(
-    #         all_image_files, image_files_subset, selected_species.upper())
-    #     image_name = st.sidebar.selectbox("Image Name", available_images)
-    #     if image_files_subset == 'consolidated':
-    #         s3_key_prefix = 'consolidated/consolidated'
-    #     else:
-    #         s3_key_prefix = image_files_subset
-    #     key_path = os.path.join(
-    #         s3_key_prefix, selected_species.upper(), image_name)
-    #     files_to_get_from_s3 = [key_path]
-    #     examples_of_species = np.random.choice(available_images, size=3)
+        selected_species = st.sidebar.selectbox("Elephant Type", types_of_elephants)
+        available_images = load_list_of_images_available(
+            all_image_files, image_files_subset, selected_species.upper())
+        image_name = st.sidebar.selectbox("Image Name", available_images)
+        if image_files_subset == 'consolidated':
+            s3_key_prefix = 'consolidated/consolidated'
+        else:
+            s3_key_prefix = root + image_files_subset
+        key_path = os.path.join(
+            s3_key_prefix, selected_species.upper(), image_name)
+        files_to_get_from_s3 = [key_path]
+        examples_of_species = np.random.choice(available_images, size=3)
 
-    #     for im in examples_of_species:
-    #         path = os.path.join(s3_key_prefix, selected_species.upper(), im)
-    #         files_to_get_from_s3.append(path)
-    #     images_from_s3 = load_files_from_s3(keys=files_to_get_from_s3)
-    #     img = images_from_s3.pop(0)
-    #     prediction = predict(img, index_to_class_label_dict, model, 5)
+        for im in examples_of_species:
+            path = os.path.join(s3_key_prefix, selected_species.upper(), im)
+            files_to_get_from_s3.append(path)
+        # images_from_s3 = load_files_from_s3(keys=files_to_get_from_s3)
+        # TODO: change this
+        images_from_s3 = load_files_from_s3(keys=["sample_image.JPG"])
+        img = images_from_s3.pop(0)
+        prediction = predict(img, index_to_class_label_dict, model, 5)
 
     st.title("Here is the image you've selected")
     resized_image = img.resize((336, 336))
     st.image(resized_image)
     st.title("Here is the most likely elephant species")
-    st.write(top_prediction)
+    st.write(prediction)
     # st.title('How it works:')
